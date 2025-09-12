@@ -1,0 +1,52 @@
+{
+    "FrameScript_ExecuteBuffer": [],
+    "SendChatMessage": [
+        {
+            "virtual_address": "0x9fa204",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fcce7",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fcd24",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fcd7c",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fcdd4",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fce10",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fce34",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0x9fce68",
+            "section": ".rdata",
+            "encoding": "ascii"
+        },
+        {
+            "virtual_address": "0xa08c89",
+            "section": ".rdata",
+            "encoding": "ascii"
+        }
+    ],
+    "lua_State": [],
+    "ExecuteBuffer": []
+}
