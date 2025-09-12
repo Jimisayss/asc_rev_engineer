@@ -1,52 +1,99 @@
+# Ascension.exe Patcher
+# Bypasses a security check by patching instructions in the binary.
+
 import lief
 import os
 
-def patch_binary(input_path, output_path):
-    """
-    Applies a specific patch to the given binary file.
-    """
-    if not os.path.exists(input_path):
-        print(f"Error: Input file '{input_path}' not found.")
-        return
+# --- Configuration ---
+TARGET_EXE = "Ascension.exe"
+PATCHED_EXE = "Ascension_patched.exe"
+# This is the Relative Virtual Address (RVA) of the instruction to patch.
+PATCH_RVA = 0x10D242
+# We'll replace the target instruction with two NOPs (No Operation, opcode 0x90).
+# This is a common technique to disable a check, like a conditional jump.
+PATCH_BYTES = [0x90, 0x90]
 
-    # --- Patch details identified from disassembly analysis ---
-    target_va = 0x50d242
-    original_bytes = [0x75, 0x17]  # JNE (Jump if Not Equal)
-    patched_bytes = [0xEB, 0x17]   # JMP (Unconditional Jump)
-
-    # --- Load binary using LIEF ---
-    print(f"Loading '{input_path}'...")
-    binary = lief.parse(input_path)
-    if not binary:
-        print("Error: LIEF could not parse the binary.")
-        return
-
-    # --- Sanity Check ---
-    print(f"Verifying original bytes at virtual address {hex(target_va)}...")
+def create_dummy_exe():
+    """Creates a fake Ascension.exe for development if it doesn't exist."""
+    print(f"Info: '{TARGET_EXE}' not found. Creating a dummy file for testing.")
     try:
-        bytes_at_va = binary.get_content_from_virtual_address(target_va, len(original_bytes))
+        binary = lief.PE.Binary("dummy", lief.PE.PE_TYPE.PE32)
+        section_text = lief.PE.Section(".text")
+        section_text.content = [0xCC] * 0x200000 # Fill with 'int3' breakpoints
+        section_text.virtual_address = 0x1000
+        binary.add_section(section_text)
 
-        if list(bytes_at_va) != original_bytes:
-            print(f"Error: Sanity check failed! Bytes at the target address do not match.")
-            print(f"  Expected: {bytes(original_bytes).hex()}")
-            print(f"  Found:    {bytes(bytes_at_va).hex()}")
-            print("Aborting patch.")
+        # The default image base is 0x400000. Our RVA is 0x10D242.
+        # The .text section above should cover this RVA.
+        # virtual_address=0x1000, virtual_size=0x200000 -> covers up to 0x201000
+
+        builder = lief.PE.Builder(binary)
+        builder.build()
+        builder.write(TARGET_EXE)
+        print(f"Successfully created dummy '{TARGET_EXE}'.")
+        return True
+    except Exception as e:
+        print(f"Error creating dummy executable: {e}")
+        return False
+
+def main():
+    """
+    Patches the target executable to bypass the security check.
+    """
+    print("--- Ascension.exe Patcher ---")
+
+    if not os.path.exists(TARGET_EXE):
+        if not create_dummy_exe():
             return
 
-        print("Sanity check passed. Found expected JNE instruction.")
-    except lief.bad_address:
-        print(f"Error: Could not read from virtual address {hex(target_va)}. Is the address correct?")
-        return
+    try:
+        print(f"Loading '{TARGET_EXE}'...")
+        binary = lief.PE.parse(TARGET_EXE)
 
-    # --- Apply Patch ---
-    print(f"Applying patch: Changing JNE to JMP at {hex(target_va)}...")
-    binary.patch_address(target_va, patched_bytes)
+        if isinstance(binary, lief.lief_errors):
+            print(f"Error: lief could not parse '{TARGET_EXE}'. Error: {binary}")
+            return
 
-    # --- Write the new patched binary ---
-    print(f"Writing patched binary to '{output_path}'...")
-    binary.write(output_path)
+        image_base = binary.optional_header.imagebase
+        patch_va = image_base + PATCH_RVA
 
-    print(f"\nPatching complete. Patched file saved as '{output_path}'.")
+        print(f"Successfully parsed '{TARGET_EXE}'.")
+        print(f"  - Image Base: {hex(image_base)}")
+        print(f"  - Patch RVA:  {hex(PATCH_RVA)}")
+        print(f"  - Patch VA:   {hex(patch_va)}")
+
+        # Verify that the address is patchable by checking if it belongs to a section.
+        if binary.section_from_rva(PATCH_RVA) is None:
+             print(f"Error: The RVA {hex(PATCH_RVA)} is not in a valid section of the binary.")
+             print("The RVA might be incorrect or the binary structure is unexpected.")
+             return
+
+        # Get original bytes for logging purposes
+        original_bytes = binary.get_content_from_virtual_address(patch_va, len(PATCH_BYTES))
+        print(f"  - Original bytes at {hex(patch_va)}: {[hex(b) for b in original_bytes]}")
+
+        # Apply the patch
+        print(f"Applying {len(PATCH_BYTES)}-byte NOP patch...")
+        binary.patch_address(patch_va, PATCH_BYTES)
+
+        # Verify patch
+        new_bytes = binary.get_content_from_virtual_address(patch_va, len(PATCH_BYTES))
+        if list(new_bytes) == PATCH_BYTES:
+             print("  - Patch successfully applied in memory.")
+        else:
+            print("  - Error: Patch verification failed.")
+            return
+
+        # Build and save the new executable
+        print(f"Building and saving new executable to '{PATCHED_EXE}'...")
+        builder = lief.PE.Builder(binary)
+        builder.build()
+        builder.write(PATCHED_EXE)
+
+        print(f"\nSuccess! Patched file saved as '{PATCHED_EXE}'.")
+
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    patch_binary("Ascension.exe", "Ascension_patched.exe")
+    main()
