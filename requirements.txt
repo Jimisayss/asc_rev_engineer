@@ -1,0 +1,4 @@
+pefile
+lief
+capstone
+psutil
