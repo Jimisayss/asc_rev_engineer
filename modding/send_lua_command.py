@@ -15,7 +15,6 @@ LIST_MODULES_ALL = 0x03
 
 # Mod-specific
 TARGET_PROCESS = "Ascension.exe"
-DLL_NAME = "lua_modloader.dll"
 # Relative Virtual Address (RVA) for the Lua execution function
 FRAME_SCRIPT_EXECUTE_BUFFER_RVA = 0x50D170
 
@@ -35,12 +34,6 @@ kernel32.VirtualFreeEx.restype = wintypes.BOOL
 
 kernel32.WriteProcessMemory.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.LPCVOID, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
 kernel32.WriteProcessMemory.restype = wintypes.BOOL
-
-kernel32.GetModuleHandleA.argtypes = [wintypes.LPCSTR]
-kernel32.GetModuleHandleA.restype = wintypes.HMODULE
-
-kernel32.GetProcAddress.argtypes = [wintypes.HMODULE, wintypes.LPCSTR]
-kernel32.GetProcAddress.restype = ctypes.c_void_p
 
 kernel32.CreateRemoteThread.argtypes = [wintypes.HANDLE, wintypes.LPVOID, ctypes.c_size_t, ctypes.c_void_p, wintypes.LPVOID, wintypes.DWORD, wintypes.LPVOID]
 kernel32.CreateRemoteThread.restype = wintypes.HANDLE
@@ -81,31 +74,6 @@ def get_module_base_address(h_process, module_name_to_find):
                 return modules[i]
     return None
 
-def inject_dll(h_process, dll_path):
-    """Injects a DLL into a process."""
-    dll_path_bytes = dll_path.encode('ascii')
-    alloc_address = kernel32.VirtualAllocEx(h_process, 0, len(dll_path_bytes) + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
-    if not alloc_address:
-        print(f"Error: Could not allocate memory for DLL path. Error code: {kernel32.GetLastError()}")
-        return False
-
-    if not kernel32.WriteProcessMemory(h_process, alloc_address, dll_path_bytes, len(dll_path_bytes) + 1, None):
-        print(f"Error: Could not write DLL path to process memory. Error code: {kernel32.GetLastError()}")
-        kernel32.VirtualFreeEx(h_process, alloc_address, 0, MEM_RELEASE)
-        return False
-
-    h_kernel32 = kernel32.GetModuleHandleA(b"kernel32.dll")
-    load_library_addr = kernel32.GetProcAddress(h_kernel32, b"LoadLibraryA")
-    h_thread = kernel32.CreateRemoteThread(h_process, None, 0, load_library_addr, alloc_address, 0, None)
-    if not h_thread:
-        print(f"Error: Could not create remote thread for DLL injection. Error code: {kernel32.GetLastError()}")
-        kernel32.VirtualFreeEx(h_process, alloc_address, 0, MEM_RELEASE)
-        return False
-
-    print("Successfully created remote thread. DLL should be injected.")
-    kernel32.CloseHandle(h_thread)
-    return True
-
 def send_lua_command(process_handle, func_address, command_string):
     """Wraps VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread to send a Lua command."""
     lua_code_bytes = command_string.encode('ascii') + b'\x00'
@@ -131,10 +99,10 @@ def send_lua_command(process_handle, func_address, command_string):
     print(f"✅ Lua command sent: {command_string}")
 
 def main():
-    dll_path = os.path.abspath(os.path.join(os.path.dirname(__file__), DLL_NAME))
-    if not os.path.exists(dll_path):
-        print(f"Error: {DLL_NAME} not found at {dll_path}")
+    if len(sys.argv) < 2:
+        print(f"Usage: python {os.path.basename(sys.argv[0])} \"<your_lua_code_here>\"")
         sys.exit(1)
+    lua_command = sys.argv[1]
 
     pid = find_process_id(TARGET_PROCESS)
     if not pid:
@@ -148,14 +116,6 @@ def main():
         sys.exit(1)
     print("Successfully opened a handle to the process.")
 
-    print(f"Attempting to inject {dll_path}...")
-    if not inject_dll(h_process, dll_path):
-        print("DLL injection failed. Exiting.")
-        kernel32.CloseHandle(h_process)
-        sys.exit(1)
-    print("DLL injected successfully.")
-
-    print("Finding base address of the game executable...")
     base_address = get_module_base_address(h_process, TARGET_PROCESS)
     if not base_address:
         print(f"Error: Could not find the base address for {TARGET_PROCESS}.")
@@ -165,24 +125,8 @@ def main():
     lua_exec_address = base_address + FRAME_SCRIPT_EXECUTE_BUFFER_RVA
     print(f"Calculated 'FrameScript_ExecuteBuffer' address (base + RVA): {hex(lua_exec_address)}")
 
-    print("\n--- Interactive Lua Shell ---")
-    print("Type Lua commands and press Enter. Type 'exit' or 'quit' to quit.")
+    send_lua_command(h_process, lua_exec_address, lua_command)
 
-    while True:
-        try:
-            command = input("Lua> ")
-            if command.lower() in ('exit', 'quit'):
-                break
-            if command:
-                send_lua_command(h_process, lua_exec_address, command)
-        except (EOFError, KeyboardInterrupt):
-            print("\nExiting shell.")
-            break
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            break
-
-    print("Closing handle to process.")
     kernel32.CloseHandle(h_process)
     print("Done.")
 

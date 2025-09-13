@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <psapi.h>
+#include <stdio.h>
 
 // Define the patch details
 #define PATCH_OFFSET 0x50D242
@@ -32,6 +33,13 @@ DWORD WINAPI PatchThread(LPVOID lpParam) {
 
         // Flush the instruction cache
         FlushInstructionCache(GetCurrentProcess(), (LPCVOID)patchAddress, PATCH_SIZE);
+
+        // Log success to a file
+        FILE *logFile = fopen("C:\\modding_log.txt", "w");
+        if (logFile != NULL) {
+            fprintf(logFile, "Patch applied successfully at offset 0x%X!\n", PATCH_OFFSET);
+            fclose(logFile);
+        }
 
         MessageBoxA(NULL, "Memory patch applied successfully!", "Mod Loader", MB_OK | MB_ICONINFORMATION);
     } else {
