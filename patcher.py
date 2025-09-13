@@ -1,90 +1,113 @@
 # Ascension.exe Patcher
-# Bypasses a security check by patching instructions in the binary.
+# Bypasses a security check by dynamically finding a code signature and patching it.
 
 import lief
 import os
+import re
 
 # --- Configuration ---
 TARGET_EXE = "Ascension.exe"
 PATCHED_EXE = "Ascension_patched.exe"
-# This is the Relative Virtual Address (RVA) of the instruction to patch.
-PATCH_RVA = 0x10D242
-# We'll replace the target instruction with two NOPs (No Operation, opcode 0x90).
-# This is a common technique to disable a check, like a conditional jump.
-PATCH_BYTES = [0x90, 0x90]
 
-def create_dummy_exe():
-    """Creates a fake Ascension.exe for development if it doesn't exist."""
-    print(f"Info: '{TARGET_EXE}' not found. Creating a dummy file for testing.")
-    try:
-        binary = lief.PE.Binary("dummy", lief.PE.PE_TYPE.PE32)
-        section_text = lief.PE.Section(".text")
-        section_text.content = [0xCC] * 0x200000 # Fill with 'int3' breakpoints
-        section_text.virtual_address = 0x1000
-        binary.add_section(section_text)
+# A regular expression signature to uniquely identify the patch location.
+# This corresponds to:
+#   test al, al        (84 C0)
+#   jne <offset>       (75 17)  <- This is our patch target
+#   push <4-byte addr> (68 ?? ?? ?? ??)
+#   push ebx           (53)
+# The .{4} is a wildcard for the 4-byte address which can change.
+PATCH_SIGNATURE_RE = re.compile(b'\\x84\\xc0\\x75\\x17\\x68.{4}\\x53')
 
-        # The default image base is 0x400000. Our RVA is 0x10D242.
-        # The .text section above should cover this RVA.
-        # virtual_address=0x1000, virtual_size=0x200000 -> covers up to 0x201000
+# The patch itself: NOP out the 'jne' instruction.
+PATCH_BYTES = b"\x90\x90"
 
-        builder = lief.PE.Builder(binary)
-        builder.build()
-        builder.write(TARGET_EXE)
-        print(f"Successfully created dummy '{TARGET_EXE}'.")
-        return True
-    except Exception as e:
-        print(f"Error creating dummy executable: {e}")
-        return False
+
+def find_signature_rva(binary, signature_re):
+    """
+    Scans the .text section of the binary for a given regex signature.
+    Returns the RVA of the found signature's patch target.
+    """
+    print(f"Scanning for regex signature: {signature_re.pattern.hex()}...")
+
+    text_section = binary.get_section(".text")
+    if not text_section:
+        print("Error: .text section not found.")
+        return None
+
+    # Get the raw content of the .text section
+    content = bytes(text_section.content)
+
+    # Use the regex to find all matches
+    matches = list(signature_re.finditer(content))
+
+    if not matches:
+        print("Error: Patch signature not found.")
+        return None
+
+    if len(matches) > 1:
+        print(f"Warning: Found {len(matches)} occurrences of the signature. Using the first one.")
+        match_spans = [m.span() for m in matches]
+        print(f"  Found at offsets: {[hex(s[0]) for s in match_spans]}")
+
+    # The match object's start() gives the offset of the signature start
+    found_offset = matches[0].start()
+
+    # The patch target is the 'jne' instruction, which starts at the 3rd byte (offset 2)
+    # of our signature pattern.
+    patch_offset = found_offset + 2
+
+    # Calculate the RVA
+    patch_rva = text_section.virtual_address + patch_offset
+
+    print(f"Signature found at offset 0x{found_offset:x} in .text section.")
+    print(f"Calculated patch RVA: 0x{patch_rva:x}")
+
+    return patch_rva
+
 
 def main():
     """
     Patches the target executable to bypass the security check.
     """
-    print("--- Ascension.exe Patcher ---")
+    print("--- Ascension.exe Dynamic Patcher (Regex Mode) ---")
 
     if not os.path.exists(TARGET_EXE):
-        if not create_dummy_exe():
-            return
+        print(f"Error: Target executable '{TARGET_EXE}' not found.")
+        return
 
     try:
-        print(f"Loading '{TARGET_EXE}'...")
         binary = lief.PE.parse(TARGET_EXE)
 
-        if isinstance(binary, lief.lief_errors):
-            print(f"Error: lief could not parse '{TARGET_EXE}'. Error: {binary}")
+        patch_rva = find_signature_rva(binary, PATCH_SIGNATURE_RE)
+        if patch_rva is None:
+            print("Patcher cannot continue. Exiting.")
             return
 
         image_base = binary.optional_header.imagebase
-        patch_va = image_base + PATCH_RVA
+        patch_va = image_base + patch_rva
 
-        print(f"Successfully parsed '{TARGET_EXE}'.")
-        print(f"  - Image Base: {hex(image_base)}")
-        print(f"  - Patch RVA:  {hex(PATCH_RVA)}")
+        print(f"\nPatching at dynamic location:")
         print(f"  - Patch VA:   {hex(patch_va)}")
 
-        # Verify that the address is patchable by checking if it belongs to a section.
-        if binary.section_from_rva(PATCH_RVA) is None:
-             print(f"Error: The RVA {hex(PATCH_RVA)} is not in a valid section of the binary.")
-             print("The RVA might be incorrect or the binary structure is unexpected.")
+        original_bytes = binary.get_content_from_virtual_address(patch_va, len(PATCH_BYTES))
+        print(f"  - Original bytes to be patched: {[hex(b) for b in original_bytes]}")
+
+        # Final check to ensure we are patching what we expect
+        if bytes(original_bytes) != b'\x75\x17':
+             print("Error: The bytes at the patch location are not the expected 'jne' instruction (75 17).")
+             print("Aborting patch.")
              return
 
-        # Get original bytes for logging purposes
-        original_bytes = binary.get_content_from_virtual_address(patch_va, len(PATCH_BYTES))
-        print(f"  - Original bytes at {hex(patch_va)}: {[hex(b) for b in original_bytes]}")
-
-        # Apply the patch
         print(f"Applying {len(PATCH_BYTES)}-byte NOP patch...")
-        binary.patch_address(patch_va, PATCH_BYTES)
+        binary.patch_address(patch_va, list(PATCH_BYTES))
 
-        # Verify patch
         new_bytes = binary.get_content_from_virtual_address(patch_va, len(PATCH_BYTES))
-        if list(new_bytes) == PATCH_BYTES:
+        if list(new_bytes) == list(PATCH_BYTES):
              print("  - Patch successfully applied in memory.")
         else:
             print("  - Error: Patch verification failed.")
             return
 
-        # Build and save the new executable
         print(f"Building and saving new executable to '{PATCHED_EXE}'...")
         builder = lief.PE.Builder(binary)
         builder.build()

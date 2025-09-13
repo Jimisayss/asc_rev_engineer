@@ -1,0 +1,28 @@
+--- Function Analysis Dump ---
+
+This document details the function that was identified and patched to bypass the Lua script execution check in Ascension.exe.
+
+Function: (Unnamed)
+Identified by: Signature Scan
+
+Description:
+This function appears to be involved in handling Lua script execution, possibly related to chat commands or other UI frames. It contains a security check that prevents certain scripts from running.
+
+Signature Used to Find the Function:
+- Type: Regular Expression
+- Pattern: 84c0751768........53
+- Assembly Equivalent:
+    TEST AL, AL
+    JNE <offset>
+    PUSH <4-byte_addr>
+    PUSH EBX
+
+Patch Location:
+- The patch is applied to the `JNE` instruction.
+- In the target binary, this was found at two RVAs: 0x10d242 and 0x1aeb38.
+- The patcher targets the first occurrence at RVA 0x10d242.
+
+Patch Details:
+- Original Bytes: [0x75, 0x17] (JNE)
+- Patched Bytes:  [0x90, 0x90] (NOP, NOP)
+- Purpose: To disable the conditional jump, forcing the program to always execute the code path that allows script execution, regardless of the result of the `TEST AL, AL` check.

@@ -1,0 +1,21 @@
+--- Discovered Strings of Interest ---
+
+String: "FrameScript_ExecuteBuffer"
+  - Not found in binary.
+
+String: "SendChatMessage"
+  - Found at VA 0x9fa204 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fcce7 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fcd24 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fcd7c in section .rdata (encoding: ascii)
+  - Found at VA 0x9fcdd4 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fce10 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fce34 in section .rdata (encoding: ascii)
+  - Found at VA 0x9fce68 in section .rdata (encoding: ascii)
+  - Found at VA 0xa08c89 in section .rdata (encoding: ascii)
+
+String: "lua_State"
+  - Not found in binary.
+
+String: "ExecuteBuffer"
+  - Not found in binary.
