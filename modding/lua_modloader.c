@@ -11,10 +11,10 @@ DWORD WINAPI PatchThread(LPVOID lpParam) {
     // 1. Wait for the game to stabilize
     Sleep(2000);
 
-    // 2. Get the module base address of Ascension.exe
-    HMODULE hModule = GetModuleHandleA("Ascension.exe");
+    // 2. Get the module base address of the main executable
+    HMODULE hModule = GetModuleHandleA(NULL);
     if (hModule == NULL) {
-        MessageBoxA(NULL, "Failed to get module handle for Ascension.exe", "Mod Loader Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(NULL, "Failed to get module handle of the main executable.", "Mod Loader Error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -52,6 +52,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             HANDLE hThread = CreateThread(NULL, 0, PatchThread, NULL, 0, NULL);
             if (hThread) {
                 CloseHandle(hThread);
+            } else {
+                MessageBoxA(NULL, "Failed to create patch thread.", "Mod Loader Error", MB_OK | MB_ICONERROR);
             }
             break;
         case DLL_THREAD_ATTACH:
