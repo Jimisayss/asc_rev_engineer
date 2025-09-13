@@ -62,7 +62,7 @@ def get_module_base_address(h_process, module_name_to_find):
     """Gets the base address of a module within a process."""
     modules = (wintypes.HMODULE * 1024)()
     needed = wintypes.DWORD()
-    if not psapi.EnumProcessModulesEx(h_process, ctypes.byref(modules), ctypes.sizeof(modules), ctypes.byref(needed), LIST_MODULES_ALL):
+    if not psapi.EnumProcessModulesEx(h_process, modules, ctypes.sizeof(modules), ctypes.byref(needed), LIST_MODULES_ALL):
         print(f"Error: EnumProcessModulesEx failed. Error code: {kernel32.GetLastError()}")
         return None
 
@@ -74,28 +74,75 @@ def get_module_base_address(h_process, module_name_to_find):
                 return modules[i]
     return None
 
+import struct
+
+def generate_shellcode(lua_string_addr, func_addr):
+    """
+    Generates x86 shellcode to call a function with the correct arguments.
+    Signature: func(string, NULL, 1)
+    """
+    shellcode = b''
+    # push 1 (showErrors = 1)
+    shellcode += b'\x6A\x01'
+    # push 0 (filename = NULL)
+    shellcode += b'\x6A\x00'
+    # push <lua_string_addr>
+    shellcode += b'\x68' + struct.pack('<L', lua_string_addr)
+    # mov eax, <func_addr>
+    shellcode += b'\xB8' + struct.pack('<L', func_addr)
+    # call eax
+    shellcode += b'\xFF\xD0'
+    # ret
+    shellcode += b'\xC3'
+    return shellcode
+
 def send_lua_command(process_handle, func_address, command_string):
-    """Wraps VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread to send a Lua command."""
+    """
+    Injects and executes shellcode to call the Lua execution function safely.
+    """
+    # 1. Allocate memory for the Lua string
     lua_code_bytes = command_string.encode('ascii') + b'\x00'
-    alloc_address = kernel32.VirtualAllocEx(process_handle, 0, len(lua_code_bytes), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
-    if not alloc_address:
-        print(f"Error: VirtualAllocEx failed. Error code: {kernel32.GetLastError()}")
+    lua_addr = kernel32.VirtualAllocEx(process_handle, 0, len(lua_code_bytes), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+    if not lua_addr:
+        print(f"Error: VirtualAllocEx for Lua string failed. Error code: {kernel32.GetLastError()}")
         return
 
-    if not kernel32.WriteProcessMemory(process_handle, alloc_address, lua_code_bytes, len(lua_code_bytes), None):
-        print(f"Error: WriteProcessMemory failed. Error code: {kernel32.GetLastError()}")
-        kernel32.VirtualFreeEx(process_handle, alloc_address, 0, MEM_RELEASE)
+    # 2. Write the Lua string to the allocated memory
+    if not kernel32.WriteProcessMemory(process_handle, lua_addr, lua_code_bytes, len(lua_code_bytes), None):
+        print(f"Error: WriteProcessMemory for Lua string failed. Error code: {kernel32.GetLastError()}")
+        kernel32.VirtualFreeEx(process_handle, lua_addr, 0, MEM_RELEASE)
         return
 
-    h_thread = kernel32.CreateRemoteThread(process_handle, None, 0, func_address, alloc_address, 0, None)
+    # 3. Generate the shellcode with the dynamic addresses
+    shellcode = generate_shellcode(lua_addr, func_address)
+
+    # 4. Allocate memory for the shellcode
+    shellcode_addr = kernel32.VirtualAllocEx(process_handle, 0, len(shellcode), MEM_COMMIT | MEM_RESERVE, 0x40) # PAGE_EXECUTE_READWRITE
+    if not shellcode_addr:
+        print(f"Error: VirtualAllocEx for shellcode failed. Error code: {kernel32.GetLastError()}")
+        kernel32.VirtualFreeEx(process_handle, lua_addr, 0, MEM_RELEASE)
+        return
+
+    # 5. Write the shellcode to its allocated memory
+    if not kernel32.WriteProcessMemory(process_handle, shellcode_addr, shellcode, len(shellcode), None):
+        print(f"Error: WriteProcessMemory for shellcode failed. Error code: {kernel32.GetLastError()}")
+        kernel32.VirtualFreeEx(process_handle, lua_addr, 0, MEM_RELEASE)
+        kernel32.VirtualFreeEx(process_handle, shellcode_addr, 0, MEM_RELEASE)
+        return
+
+    # 6. Create a remote thread to execute the shellcode
+    h_thread = kernel32.CreateRemoteThread(process_handle, None, 0, shellcode_addr, 0, 0, None)
     if not h_thread:
-        print(f"Error: CreateRemoteThread failed. Error code: {kernel32.GetLastError()}")
-        kernel32.VirtualFreeEx(process_handle, alloc_address, 0, MEM_RELEASE)
+        print(f"Error: CreateRemoteThread for shellcode failed. Error code: {kernel32.GetLastError()}")
+        kernel32.VirtualFreeEx(process_handle, lua_addr, 0, MEM_RELEASE)
+        kernel32.VirtualFreeEx(process_handle, shellcode_addr, 0, MEM_RELEASE)
         return
 
-    kernel32.WaitForSingleObject(h_thread, -1)
+    # 7. Wait for execution and clean up
+    kernel32.WaitForSingleObject(h_thread, -1) # -1 is INFINITE
     kernel32.CloseHandle(h_thread)
-    kernel32.VirtualFreeEx(process_handle, alloc_address, 0, MEM_RELEASE)
+    kernel32.VirtualFreeEx(process_handle, lua_addr, 0, MEM_RELEASE)
+    kernel32.VirtualFreeEx(process_handle, shellcode_addr, 0, MEM_RELEASE)
     print(f"✅ Lua command sent: {command_string}")
 
 def main():
