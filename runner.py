@@ -68,7 +68,8 @@ class ProcessManager:
 
     def _find_base_address(self):
         try:
-            self.base_address = self.process.memory_maps()[0].addr
+            # grouped=False returns a list of pmmap_ext objects, which have an 'addr' attribute
+            self.base_address = self.process.memory_maps(grouped=False)[0].addr
             self.log_data.append({"step": "Find Base Address", "address": hex(self.base_address), "status": "Success"})
         except (psutil.AccessDenied, IndexError) as e:
             raise RuntimeError(f"Could not find base address: {e}")
@@ -244,7 +245,7 @@ def main():
         print("\nInjection successful!")
         log_data["status"] = "Success"
 
-    except (RuntimeError, ctypes.WinError, psutil.Error) as e:
+    except (RuntimeError, OSError, psutil.Error) as e:
         print(f"\nFATAL ERROR: {e}")
         log_data["status"] = "Failed"; log_data["error"] = str(e)
     finally:
