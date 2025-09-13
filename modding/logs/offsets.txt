@@ -1,0 +1,7 @@
+# Memory Offsets for Ascension.exe Modding
+
+- **Target:** `Ascension.exe`
+- **Offset:** `0x50D242` (relative to the module base address)
+- **Original Bytes:** `JE` (conditional jump) instruction.
+- **Patched Bytes:** `0x90 0x90` (NOP NOP)
+- **Purpose:** To bypass a script guard and enable developer-mode script execution.
