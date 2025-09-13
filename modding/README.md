@@ -1,33 +1,37 @@
-# Modding Tools for Ascension.exe
+# Modding Tools for game_client.exe
 
-This directory contains tools for modding the Ascension.exe game client.
+This directory contains tools for creating a scripting plugin for the game_client.exe application.
 
 ## Files
 
-- `lua_modloader.c`: The source code for the DLL that patches the game.
-- `lua_modloader.dll`: The compiled DLL.
-- `injector.py`: A Python script to inject the DLL into the game process.
+- `mod_loader.c`: The source code for the DLL that enables the scripting interface.
+- `mod_loader.dll`: The compiled 32-bit DLL.
+- `injector.py`: A Python script to load the DLL into the game process.
 - `logs/offsets.txt`: A log of memory offsets and patches.
 
 ## Usage
 
 ### Prerequisites
 
-- **MinGW-w64**: You need a working MinGW-w64 C compiler to build the DLL. You can install it on Debian/Ubuntu with `sudo apt-get install mingw-w64`.
+- **Python 3 (32-bit)**: You **must** use a 32-bit version of Python to run the injector script, as the target application is 32-bit. You can check your Python architecture by running `python -c "import platform; print(platform.architecture())"`.
+- **MinGW-w64 (for 32-bit)**: You need a working MinGW C compiler capable of producing 32-bit DLLs. On 64-bit systems, this often requires specific packages (e.g., `gcc-multilib` on Debian/Ubuntu).
 
-### Compilation
+### Compilation and Execution
 
 1.  **Compile the DLL**:
-    Open a terminal or command prompt and run the following command from the `modding` directory:
+    Open a terminal or command prompt in the `modding` directory and run the following command. This creates the 32-bit `mod_loader.dll`.
     ```bash
-    x86_64-w64-mingw32-gcc -shared -o lua_modloader.dll lua_modloader.c -lpsapi
+    gcc -m32 -shared -o mod_loader.dll mod_loader.c -lpsapi
     ```
-    *Note: The exact name of the gcc executable may vary depending on your system.*
+    *Note: If you are on a 64-bit system, you may need to use a specific compiler like `i686-w64-mingw32-gcc` if the default `gcc` does not support the `-m32` flag.*
+
 2.  **Run the game**:
-    - Start `Ascension.exe`.
+    - Start `game_client.exe`.
+
 3.  **Run the injector**:
+    - Make sure you are using a **32-bit** Python interpreter.
     ```bash
     python injector.py
     ```
 
-The injector will find the game process and inject the DLL. A message box should appear in the game confirming that the patch was applied.
+The injector will find the game process and load the DLL. A message box should appear in the game confirming that the mod loader is active.

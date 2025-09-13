@@ -11,10 +11,10 @@ DWORD WINAPI PatchThread(LPVOID lpParam) {
     // 1. Wait for the game to stabilize
     Sleep(2000);
 
-    // 2. Get the module base address of Ascension.exe
-    HMODULE hModule = GetModuleHandleA("Ascension.exe");
+    // 2. Get the module base address of game_client.exe
+    HMODULE hModule = GetModuleHandleA("game_client.exe");
     if (hModule == NULL) {
-        MessageBoxA(NULL, "Failed to get module handle for Ascension.exe", "Mod Loader Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(NULL, "Failed to get module handle for game_client.exe", "Mod Loader Error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
